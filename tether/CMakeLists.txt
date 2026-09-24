@@ -5,7 +5,7 @@ if(APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum macOS version")
 endif()
 
-project(Tether VERSION 0.1.0 LANGUAGES C CXX)
+project(Tether VERSION 0.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -40,6 +40,8 @@ endif()
 #-------------------------------------------------------------------------------
 add_library(tether_dsp INTERFACE)
 target_sources(tether_dsp INTERFACE
+    "${CMAKE_CURRENT_SOURCE_DIR}/Source/dsp/GrainShifter.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Source/dsp/Motion.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/Source/dsp/PitchTracker.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/Source/dsp/SpectralLayer.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/Source/dsp/TetherEngine.cpp")
@@ -59,6 +61,9 @@ set(TETHER_PLUGIN_SOURCES
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
     Source/Parameters.cpp
+    Source/FactoryPresets.cpp
+    Source/PresetManager.cpp
+    Source/ui/PresetBar.cpp
     Source/ui/TetherLookAndFeel.cpp
     Source/ui/Visualizer.cpp)
 
@@ -106,6 +111,7 @@ if(TETHER_BUILD_TESTS)
     target_sources(TetherTests PRIVATE
         tests/TestMain.cpp
         tests/DspTests.cpp
+        tests/QualityTests.cpp
         tests/PluginTests.cpp
         ${TETHER_PLUGIN_SOURCES})
     target_compile_definitions(TetherTests PRIVATE

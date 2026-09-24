@@ -12,8 +12,8 @@ moves as one with the lead.
 
 | Stage | What happens |
 |---|---|
-| **Pitch** | Detects the guide's pitch and the layer's own pitch, then pitch-shifts the layer onto the guide's pitch curve. The shifter is a peak-locked phase vocoder that keeps stereo intact, with optional formant preservation. |
-| **Level** | Measures both loudness curves and replaces the layer's with the guide's (100% = identical loudness curve). |
+| **Pitch** | Detects the guide's pitch and the layer's own pitch, then moves the layer onto the guide's pitch curve. The **Natural** engine is pitch-synchronous: it cuts the layer into single-period grains and re-lays them at the new period, so the output pitch is exact (within a cent), formants stay put unless you move them, and a held note comes out as clean as it went in. The **Spectral** engine is a peak-locked phase vocoder for chords, pads and noisy layers. Stereo stays intact in both. |
+| **Level** | Measures both loudness curves over whole periods and replaces the layer's with the guide's (100% = identical loudness curve). |
 | **Articulation** | **Gate** mutes the layer between the guide's notes. **Punch** re-applies the guide's transients. |
 | **Motion** | Compares the guide's and the layer's spectra in about 25 bands and moves the layer's tone the way the guide's moves (filter sweeps, vowels, brightness), without changing its loudness. **Tone** also pulls the layer's average tone toward the guide. |
 
@@ -37,7 +37,7 @@ Put Tether on the **layer** track, then send the **guide** into Tether's sidecha
 
 | DAW | How |
 |---|---|
-| Ableton Live | In Tether's device, open the sidechain section, switch it on, and choose the guide track under *Audio From*. |
+| Ableton Live | Click the triangle in Tether's title bar to open the sidechain section, switch it on, and choose the guide track under *Audio From* (Post FX). |
 | Logic Pro | Use the **Side Chain** menu in the top-right of Tether's plug-in window. |
 | FL Studio | Select the guide's mixer track, right-click the send arrow on Tether's track and choose *Sidechain to this track*. Then point Tether's sidechain input at it in the wrapper's *Processing* tab. |
 | Bitwig | Use the sidechain selector in Tether's device header. |
@@ -46,16 +46,35 @@ Put Tether on the **layer** track, then send the **guide** into Tether's sidecha
 | Reaper | Give the layer track 4 channels and send the guide to channels 3/4. |
 
 The header says **GUIDE LOCKED** once Tether hears the guide. Until a sidechain is
-connected, the layer passes through untouched.
+connected, the layer passes through untouched. **LISTEN** (Output panel) plays the
+guide instead of the layer, so you can check the routing.
+
+## Presets
+
+The **PRESET** bar in the header steps through presets, opens the preset menu and
+saves user presets. Factory presets:
+
+| Group | Presets |
+|---|---|
+| Basics | Init, Pitch Only, Level + Motion Only |
+| Vocals | Vocal Double, Vocal Octave Down, Choir Fifth, Harmony Third, Robot Lock |
+| Bass | Sub Follow, 808 Lock, Growl Rider |
+| Pads + Textures | Pad Follow, Spectral Pad, Octave Up Shimmer, Whisper Layer, Drone Glue |
+| Rhythmic | Tight Sync, Pluck Chaser |
+
+User presets are files in `Documents/Low End Candy/Tether/Presets/`, so they can
+be copied between machines. The current preset's name is saved with the session.
 
 ## Controls
 
 **Pitch**
 - **Amount**: how far the layer's pitch moves onto the guide's (100% = exactly the guide's pitch).
 - **Glide**: smooths pitch changes. Raise it for slides, or to calm down heavily filtered guides.
-- **Octave / Interval**: put the layer octaves or semitones away from the guide (e.g. Octave -1, Interval +7).
+- **Octave / Interval / Fine**: put the layer octaves, semitones or cents away from the guide (e.g. Octave -1, Interval +7). A few cents of Fine thickens a doubled layer.
 - **Detect / Root**: Detect finds the layer's own pitch. Turn it off and set **Root** for noisy or unpitched layers, or ones you know the note of. Root is also the fallback when nothing can be detected.
-- **Formant**: keeps the layer's character when it's shifted far (no chipmunk or monster effect).
+- **Preserve / Formant**: Preserve keeps the layer's formants (its resonant character) in place while the pitch moves; off, they move with the pitch like a sampler. **Formant** shifts them on top, in semitones: down sounds bigger, up sounds smaller.
+- **Vibrato**: how much of the guide's vibrato and bends the layer copies. 0% plays plain notes, 100% copies them, 200% exaggerates them.
+- **Scale / Key**: snaps the layer's notes to a scale. Vibrato still rides on top. With an **Interval**, this gives diatonic harmonies (a fifth above stays in key).
 
 **Level + Articulation**
 - **Level**: how closely the layer's loudness follows the guide.
@@ -70,13 +89,18 @@ connected, the layer passes through untouched.
 **Output**
 - **Mix**: processed vs untouched layer (phase-aligned, so any blend is safe).
 - **Output**: output gain.
-- **Resolution** (header): **Tight** gives the lowest latency (~25 ms) and tracks notes above ~90 Hz. **Normal** (~49 ms) goes down to ~45 Hz. **Deep** (~95 ms) handles sub bass down to ~25 Hz.
+- **Listen**: monitor the guide instead of the layer.
+
+**Header**
+- **Engine**: **Natural** (default) for anything with one note at a time: cleanest sound, exact pitch. **Spectral** for chords, pads and noise; it smears a little and is less clean on big shifts.
+- **Resolution**: **Tight** gives the lowest latency (~28 ms) and tracks notes above ~90 Hz. **Normal** (~53 ms) goes down to ~45 Hz. **Deep** (~97 ms) handles sub bass down to ~25 Hz. Latencies are at 48 kHz.
 
 ## Tips
-- Guides should be **monophonic** (one note at a time): vocals, leads, bass lines. The layer can be anything.
+- Guides should be **monophonic** (one note at a time): vocals, leads, bass lines. The layer can be anything, but a single held note gives the cleanest result: Tether does all the moving.
+- The most reliable setup: give the layer one long note, turn **Detect** off and set **Root** to that note.
 - Sub or 808 guides: use **Deep**.
 - Layer sounds odd an octave off: use **Octave**, or turn **Detect** off and set **Root**.
-- Heavily filtered or wobbling guides can make the pitch jitter slightly. Add 50–150 ms of **Glide**.
+- Heavily filtered or wobbling guides can make the pitch jitter slightly. Add 50–150 ms of **Glide**, or turn **Vibrato** down.
 - Tether follows in real time. It doesn't time-stretch the layer to fix timing, so keep the layer and guide on the same grid.
 
 ## Build from source
@@ -104,9 +128,12 @@ libxinerama-dev libxcursor-dev libxext-dev libfreetype-dev libfontconfig1-dev`.
 build/TetherTests_artefacts/Release/TetherTests
 ```
 The tests cover pitch-detection accuracy (sine, saw and square waves from 27 Hz to
-1.5 kHz), pitch-shift accuracy, level matching, gating, punch, motion, octave-error
-guards at note onsets, bit-exact bypass, latency alignment, block-size invariance,
-stereo coherence, NaN/runaway safety, bus layouts, state save/restore and the editor.
+1.5 kHz), pitch-shift accuracy (within 2 cents) and cleanliness (periodicity and
+harmonic-to-noise ratio of the shifted layer), level matching (within 0.3 dB),
+gating, punch, motion, fine tune, formant shift, scale quantisation, vibrato
+scaling, listen, octave-error guards at note onsets, bit-exact bypass and
+pass-through, latency alignment, block-size invariance, stereo coherence,
+NaN/runaway safety, bus layouts, state save/restore, presets and the editor.
 CI also runs [pluginval](https://github.com/Tracktion/pluginval) at strictness 10
 and Apple's `auval`.
 
@@ -115,16 +142,24 @@ Process files without a DAW. The output is latency-compensated and lines up with
 the inputs:
 ```bash
 build/TetherRender_artefacts/Release/tether_render layer.wav guide.wav out.wav --octave -1 --motion 80
+build/TetherRender_artefacts/Release/tether_render layer.wav guide.wav out.wav --semitones 7 --scale major --key C
 build/TetherRender_artefacts/Release/tether_render --demo demo   # renders synthesized before/after examples
 ```
+`--help` lists every option; scale names are the ones in the plug-in (`major`,
+`minor`, `harmonic-minor`, `dorian`, `major-pentatonic`, ...).
 
 ## Code map
 ```
 Source/dsp/PitchTracker     YIN pitch detection (FFT-based) + fundamental-phase refinement, pitch follower
-Source/dsp/SpectralLayer    STFT: peak-locked pitch shift, formant envelope, motion/tone band EQ
-Source/dsp/TetherEngine     framing, latency alignment, level/gate/punch, dry/wet
+Source/dsp/GrainShifter     Natural engine: pitch-synchronous grains (TD-PSOLA), formant shift, transparent when idle
+Source/dsp/SpectralLayer    Spectral engine: peak-locked phase-vocoder pitch shift with formant envelope
+Source/dsp/Motion           motion/tone analysis per band, and the peaking-EQ cascade that applies it
+Source/dsp/TetherEngine     pitch targets (offsets, scale, vibrato), latency alignment, level/gate/punch, dry/wet
+Source/Parameters           parameter layout, settings <-> parameters
+Source/FactoryPresets       the built-in presets
+Source/PresetManager        preset loading/saving (user presets are XML files)
 Source/PluginProcessor      JUCE plug-in: buses (main + "Guide" sidechain), parameters, state
-Source/PluginEditor, ui/    custom UI: live pitch/level view, motion EQ meter
+Source/PluginEditor, ui/    custom UI: preset bar, live pitch/level view, motion EQ meter
 tests/                      unit tests (JUCE UnitTest)
 tools/TetherRender.cpp      offline renderer and demo generator
 ```

@@ -21,6 +21,7 @@ void TetherAudioProcessor::prepareToPlay (double sampleRate, int)
     // Always prepared for stereo; mono layouts simply use the first channel.
     engine.prepare (sampleRate, 2);
     engine.setResolution (params.resolution());
+    engine.setEngine (params.engine());
     setLatencySamples (engine.getLatencySamples());
     preparedRate.store (sampleRate, std::memory_order_relaxed);
 }
@@ -67,12 +68,16 @@ void TetherAudioProcessor::run (juce::AudioBuffer<float>& buffer, bool bypassed)
 {
     juce::ScopedNoDenormals noDenormals;
 
-    // Resolution is not automatable; switching it re-reports the latency.
+    // Resolution and engine are not automatable; switching them restarts the
+    // pitch stage, and a new resolution re-reports the latency.
     if (const auto wanted = params.resolution(); wanted != engine.getResolution())
     {
         engine.setResolution (wanted);
         setLatencySamples (engine.getLatencySamples());
     }
+
+    if (const auto wanted = params.engine(); wanted != engine.getEngine())
+        engine.setEngine (wanted);
 
     auto layer = getBusBuffer (buffer, true, 0);
 

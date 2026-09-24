@@ -16,11 +16,13 @@ struct Rendered
 
 Rendered render (const std::vector<float>& layerL, const std::vector<float>& layerR,
                  const std::vector<float>* guide, const EngineParams& params,
-                 Resolution resolution = Resolution::normal, double sampleRate = 48000.0, int blockSize = 512)
+                 Resolution resolution = Resolution::normal, double sampleRate = 48000.0, int blockSize = 512,
+                 Engine engineMode = Engine::natural)
 {
     TetherEngine engine;
     engine.prepare (sampleRate, 2);
     engine.setResolution (resolution);
+    engine.setEngine (engineMode);
 
     Rendered r;
     r.latency = engine.getLatencySamples();
@@ -314,11 +316,11 @@ private:
             p.formant = c.formant;
             const auto r = render (layer, layer, &guide, p, c.res);
 
-            expectPitch (r.left, (int) (1.2 * sr), c.guideHz, 10.0, "output pitch");
+            expectPitch (r.left, (int) (1.2 * sr), c.guideHz, 2.0, "output pitch");
 
             const double outDb = testsig::rmsDb (r.left, (int) (1.2 * sr), 16384);
             const double guideDb = testsig::rmsDb (guide, (int) (1.2 * sr) - r.latency, 16384);
-            expectLessThan (std::abs (outDb - guideDb), 1.0, "level match: out " + juce::String (outDb, 2)
+            expectLessThan (std::abs (outDb - guideDb), 0.3, "level match: out " + juce::String (outDb, 2)
                                                              + " dB vs guide " + juce::String (guideDb, 2) + " dB");
         }
 
@@ -328,11 +330,11 @@ private:
             const auto guide = testsig::saw (sr, 330.0, 0.3f, n);
             EngineParams p;
             p.octave = -1;
-            expectPitch (render (layer, layer, &guide, p).left, (int) (1.2 * sr), 165.0, 10.0, "octave -1");
+            expectPitch (render (layer, layer, &guide, p).left, (int) (1.2 * sr), 165.0, 2.0, "octave -1");
 
             p.octave = 0;
             p.semitones = -7;
-            expectPitch (render (layer, layer, &guide, p).left, (int) (1.2 * sr), 330.0 * std::pow (2.0, -7.0 / 12.0), 10.0, "-7 st");
+            expectPitch (render (layer, layer, &guide, p).left, (int) (1.2 * sr), 330.0 * std::pow (2.0, -7.0 / 12.0), 2.0, "-7 st");
         }
 
         beginTest ("Pitch amount 0 leaves the layer's pitch alone");
@@ -351,7 +353,7 @@ private:
             EngineParams p;
             p.layerAuto = false;
             p.layerRoot = 45.0f; // A2 = 110 Hz, the layer's true pitch
-            expectPitch (render (layer, layer, &guide, p).left, (int) (1.2 * sr), 164.81, 10.0, "root A2");
+            expectPitch (render (layer, layer, &guide, p).left, (int) (1.2 * sr), 164.81, 2.0, "root A2");
         }
     }
 
@@ -374,11 +376,11 @@ private:
             for (size_t k = 0; k < melody.noteStarts.size(); ++k)
             {
                 const int start = melody.noteStarts[k] + melody.noteLengths[k] / 2 - 4096;
-                expectPitch (r.left, start + r.latency, melody.noteHz[k], 15.0, "note " + juce::String ((int) k));
+                expectPitch (r.left, start + r.latency, melody.noteHz[k], 3.0, "note " + juce::String ((int) k));
 
                 const double outDb = testsig::rmsDb (r.left, start + r.latency, 8192);
                 const double guideDb = testsig::rmsDb (melody.signal, start, 8192);
-                expectLessThan (std::abs (outDb - guideDb), 1.5, "note " + juce::String ((int) k) + " level: out "
+                expectLessThan (std::abs (outDb - guideDb), 0.75, "note " + juce::String ((int) k) + " level: out "
                                 + juce::String (outDb, 2) + " dB, guide " + juce::String (guideDb, 2) + " dB");
             }
 
@@ -602,9 +604,12 @@ private:
 
         EngineParams extremes[3];
         extremes[1].pitchAmount = 1.0f; extremes[1].glideMs = 0.0f; extremes[1].octave = 3; extremes[1].semitones = 12;
+        extremes[1].fineCents = 100.0f; extremes[1].formantShift = 12.0f; extremes[1].vibrato = 2.0f; extremes[1].scale = Scale::fifths;
         extremes[1].attackMs = 0.1f; extremes[1].releaseMs = 5.0f; extremes[1].punch = 1.0f; extremes[1].gateDb = 0.0f;
         extremes[1].motion = 1.0f; extremes[1].tone = 1.0f; extremes[1].outputDb = 24.0f;
         extremes[2].octave = -3; extremes[2].semitones = -12; extremes[2].glideMs = 500.0f; extremes[2].attackMs = 100.0f;
+        extremes[2].fineCents = -100.0f; extremes[2].formantShift = -12.0f; extremes[2].formant = false; extremes[2].vibrato = 0.0f;
+        extremes[2].layerAuto = false; extremes[2].layerRoot = 12.0f;
         extremes[2].releaseMs = 1000.0f; extremes[2].gateDb = -80.0f; extremes[2].mix = 0.0f; extremes[2].outputDb = -24.0f;
 
         for (const auto& layer : inputs)
@@ -615,7 +620,7 @@ private:
                 {
                     for (auto res : { Resolution::tight, Resolution::deep })
                     {
-                        const auto r = render (layer, layer, &guide, p, res);
+                        const auto r = render (layer, layer, &guide, p, res, 48000.0, 512, (&p - extremes) == 2 ? Engine::spectral : Engine::natural);
                         bool finite = true;
                         float peak = 0.0f;
                         for (float v : r.left)

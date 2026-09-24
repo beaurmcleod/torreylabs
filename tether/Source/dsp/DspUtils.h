@@ -71,20 +71,26 @@ struct EnvelopeFollower
 
 //==============================================================================
 /** Moving average (boxcar). Used on x^2 it gives a true RMS that reaches zero
-    exactly `length` samples after a signal stops, unlike a one-pole smoother. */
+    exactly `length` samples after a signal stops, unlike a one-pole smoother.
+    The length can be changed at any time without losing history, so it can
+    follow a signal's period (an exact number of periods has no ripple). */
 class MovingAverage
 {
 public:
     void prepare (int maxLength)
     {
-        buffer.assign ((size_t) std::max (1, maxLength), 0.0f);
-        setLength (maxLength);
+        buffer.assign ((size_t) nextPowerOfTwo (std::max (2, maxLength)), 0.0f);
+        mask = (int) buffer.size() - 1;
+        maximum = std::max (1, maxLength);
+        setLength (maximum);
+        reset();
     }
 
+    /** Real-time safe; re-sums the window it now covers. */
     void setLength (int newLength) noexcept
     {
-        length = std::clamp (newLength, 1, (int) buffer.size());
-        reset();
+        length = std::clamp (newLength, 1, maximum);
+        resum();
     }
 
     void reset() noexcept
@@ -92,22 +98,18 @@ public:
         std::fill (buffer.begin(), buffer.end(), 0.0f);
         pos = 0;
         sum = 0.0;
+        sinceResum = 0;
     }
 
     float process (float x) noexcept
     {
-        sum += (double) x - (double) buffer[(size_t) pos];
-        buffer[(size_t) pos] = x;
+        sum += (double) x - (double) buffer[(size_t) ((pos - length) & mask)];
+        buffer[(size_t) (pos & mask)] = x;
+        pos = (pos + 1) & mask;
 
-        if (++pos == length)
-        {
-            // Re-sum once per cycle so floating-point drift can't accumulate.
-            pos = 0;
-            double exact = 0.0;
-            for (int i = 0; i < length; ++i)
-                exact += buffer[(size_t) i];
-            sum = exact;
-        }
+        // Re-sum periodically so floating-point drift can't accumulate.
+        if (++sinceResum >= length)
+            resum();
 
         return (float) std::max (0.0, sum / length);
     }
@@ -115,8 +117,17 @@ public:
     int getLength() const noexcept   { return length; }
 
 private:
+    void resum() noexcept
+    {
+        double exact = 0.0;
+        for (int i = 1; i <= length; ++i)
+            exact += buffer[(size_t) ((pos - i) & mask)];
+        sum = exact;
+        sinceResum = 0;
+    }
+
     std::vector<float> buffer;
-    int length = 1, pos = 0;
+    int length = 1, maximum = 1, pos = 0, mask = 0, sinceResum = 0;
     double sum = 0.0;
 };
 
@@ -150,10 +161,10 @@ public:
         return data[(size_t) ((writePos - 1 - delay) & mask)];
     }
 
-    /** Copies the newest `n` samples, oldest first. */
-    void copyLatest (float* dest, int n) const noexcept
+    /** Copies `n` samples ending `delay` pushes ago, oldest first. */
+    void copyLatest (float* dest, int n, int delay = 0) const noexcept
     {
-        int start = (writePos - n) & mask;
+        int start = (writePos - n - delay) & mask;
         for (int i = 0; i < n; ++i)
             dest[i] = data[(size_t) ((start + i) & mask)];
     }

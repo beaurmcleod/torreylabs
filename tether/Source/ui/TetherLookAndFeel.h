@@ -34,6 +34,14 @@ public:
 
     void drawToggleButton (juce::Graphics&, juce::ToggleButton&, bool highlighted, bool down) override;
 
+    void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour& background,
+                               bool highlighted, bool down) override;
+    void drawButtonText (juce::Graphics&, juce::TextButton&, bool highlighted, bool down) override;
+    juce::Font getTextButtonFont (juce::TextButton&, int) override      { return uiFont (11.0f, true); }
+    juce::Font getAlertWindowTitleFont() override                       { return uiFont (16.0f, true); }
+    juce::Font getAlertWindowMessageFont() override                     { return uiFont (13.0f); }
+    juce::Font getAlertWindowFont() override                            { return uiFont (13.0f); }
+
     void drawComboBox (juce::Graphics&, int width, int height, bool isButtonDown,
                        int buttonX, int buttonY, int buttonW, int buttonH, juce::ComboBox&) override;
     void positionComboBoxText (juce::ComboBox&, juce::Label&) override;

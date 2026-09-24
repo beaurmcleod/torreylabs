@@ -27,13 +27,16 @@ void printUsage()
         "Options (defaults match the plugin):\n"
         "  --pitch 0-100      pitch amount (%)          --glide ms\n"
         "  --octave n         -3..3                     --semitones n   -12..12\n"
+        "  --fine cents       -100..100                 --vibrato 0-200 guide vibrato passed on (%)\n"
         "  --root midi        layer root note           --no-detect     use --root instead of detecting\n"
-        "  --no-formant       don't preserve formants\n"
+        "  --no-formant       formants follow the pitch --formant-shift st   -12..12\n"
+        "  --scale name       off|chromatic|major|minor|... (see README)   --key C..B\n"
         "  --level 0-100      level follow (%)          --attack ms     --release ms\n"
         "  --punch 0-100      transient transfer (%)    --gate dB       (-80 = off)\n"
         "  --motion 0-100     spectral movement (%)     --tone 0-100    tone match (%)\n"
         "  --mix 0-100        wet/dry (%)               --output dB\n"
-        "  --resolution tight|normal|deep\n";
+        "  --resolution tight|normal|deep            --engine natural|spectral\n"
+        "  --listen           output the guide instead of the layer\n";
 }
 
 struct Audio
@@ -92,11 +95,13 @@ bool writeAudio (const juce::File& file, const Audio& audio)
 }
 
 /** Runs the engine over whole files and removes the latency. */
-Audio render (const Audio& layer, const Audio& guide, const EngineParams& params, Resolution resolution)
+Audio render (const Audio& layer, const Audio& guide, const EngineParams& params, Resolution resolution,
+              Engine engineMode = Engine::natural)
 {
     TetherEngine engine;
     engine.prepare (layer.sampleRate, 2);
     engine.setResolution (resolution);
+    engine.setEngine (engineMode);
 
     const int latency = engine.getLatencySamples();
     const int length = layer.length();
@@ -384,6 +389,25 @@ int runDemo (const juce::File& folder)
         ok = writeOrComplain (folder.getChildFile ("01_mix_guide_plus_tethered.wav"), mixTogether (guide, tethered, 0.8f, 0.8f)) && ok;
     }
 
+    std::cout << "Demo 3: vocal guide -> pad harmony, a diatonic fifth above in A minor\n";
+    {
+        const auto guide = makeVocalGuide (sr, 10.0);
+        const auto pad = makePadLayer (sr, 10.0);
+        EngineParams p;
+        p.semitones = 7;
+        p.scale = Scale::minor;
+        p.key = 9;             // A minor: the demo vocal's key
+        p.vibrato = 0.6f;
+        p.glideMs = 60.0f;
+        p.attackMs = 15.0f;
+        p.releaseMs = 250.0f;
+        p.motion = 0.4f;
+        p.tone = 0.3f;
+        const auto tethered = render (pad, guide, p, Resolution::normal);
+        ok = writeOrComplain (folder.getChildFile ("03_layer_pad_harmony_fifth.wav"), tethered) && ok;
+        ok = writeOrComplain (folder.getChildFile ("03_mix_guide_plus_harmony.wav"), mixTogether (guide, tethered, 0.8f, 0.7f)) && ok;
+    }
+
     std::cout << "Demo 2: wobble bass guide -> static FM growl, one octave up\n";
     {
         const auto guide = makeWobbleBassGuide (sr, 7.0);
@@ -428,6 +452,7 @@ int main (int argc, char** argv)
 
     EngineParams p;
     Resolution resolution = Resolution::normal;
+    Engine engineMode = Engine::natural;
 
     for (int i = 3; i < args.size(); ++i)
     {
@@ -436,9 +461,33 @@ int main (int argc, char** argv)
         else if (a == "--glide")      p.glideMs = parseFloat (args, i);
         else if (a == "--octave")     p.octave = (int) parseFloat (args, i);
         else if (a == "--semitones")  p.semitones = (int) parseFloat (args, i);
+        else if (a == "--fine")       p.fineCents = parseFloat (args, i);
+        else if (a == "--vibrato")    p.vibrato = parseFloat (args, i) * 0.01f;
         else if (a == "--root")       p.layerRoot = parseFloat (args, i);
         else if (a == "--no-detect")  p.layerAuto = false;
         else if (a == "--no-formant") p.formant = false;
+        else if (a == "--formant-shift") p.formantShift = parseFloat (args, i);
+        else if (a == "--listen")     p.listen = true;
+        else if (a == "--scale")
+        {
+            const auto name = ++i < args.size() ? args[i].toLowerCase().replace ("-", " ").replace ("_", " ") : juce::String();
+            p.scale = Scale::off;
+            for (int k = 0; k < (int) Scale::count; ++k)
+                if (juce::String (scaleName ((Scale) k)).toLowerCase() == name)
+                    p.scale = (Scale) k;
+        }
+        else if (a == "--key")
+        {
+            const auto name = ++i < args.size() ? args[i].toUpperCase() : juce::String();
+            for (int k = 0; k < 12; ++k)
+                if (juce::String (keyName (k)) == name)
+                    p.key = k;
+        }
+        else if (a == "--engine")
+        {
+            const auto e = ++i < args.size() ? args[i].toLowerCase() : juce::String();
+            engineMode = e == "spectral" ? Engine::spectral : Engine::natural;
+        }
         else if (a == "--level")      p.levelAmount = parseFloat (args, i) * 0.01f;
         else if (a == "--attack")     p.attackMs = parseFloat (args, i);
         else if (a == "--release")    p.releaseMs = parseFloat (args, i);
@@ -475,5 +524,5 @@ int main (int argc, char** argv)
         return 1;
     }
 
-    return writeOrComplain (cwd.getChildFile (args[2]), render (layer, guide, p, resolution)) ? 0 : 1;
+    return writeOrComplain (cwd.getChildFile (args[2]), render (layer, guide, p, resolution, engineMode)) ? 0 : 1;
 }

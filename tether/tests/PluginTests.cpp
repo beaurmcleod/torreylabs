@@ -132,6 +132,90 @@ public:
             expectLessThan (worst, 1.0e-6f);
         }
 
+        beginTest ("Engine parameter switches the engine without changing the latency");
+        {
+            TetherAudioProcessor p;
+            p.prepareToPlay (48000.0, 512);
+            const int latency = p.getLatencySamples();
+            setParam (p, ParamIDs::engine, 1.0f);
+            std::vector<float> silence (4096, 0.0f);
+            processSeconds (p, silence, silence, 512);
+            expect (p.getEngine().getEngine() == tether::Engine::spectral);
+            expectEquals (p.getLatencySamples(), latency);
+        }
+
+        beginTest ("Factory presets load and are remembered by name");
+        {
+            TetherAudioProcessor p;
+            auto& presets = p.getPresets();
+            expectGreaterThan (presets.getNumFactoryPresets(), 10);
+            expectEquals (presets.getCurrentName(), juce::String ("Init"));
+
+            int subFollow = -1;
+            for (int i = 0; i < presets.getNumFactoryPresets(); ++i)
+                if (juce::String (presets.getFactoryPreset (i).name) == "Sub Follow")
+                    subFollow = i;
+
+            expect (subFollow >= 0, "Sub Follow exists");
+            presets.loadFactoryPreset (subFollow);
+            auto value = [&] (const char* id) { return p.getState().getRawParameterValue (id)->load(); };
+            expectWithinAbsoluteError (value (ParamIDs::octave), -1.0f, 0.001f);
+            expectWithinAbsoluteError (value (ParamIDs::resolution), 2.0f, 0.001f);
+            expectWithinAbsoluteError (value (ParamIDs::detectLayer), 0.0f, 0.001f);
+            expectEquals (presets.getCurrentName(), juce::String ("Sub Follow"));
+            expect (presets.isCurrentFactory());
+
+            // Every preset must apply without touching parameters it doesn't set.
+            for (int i = 0; i < presets.getNumFactoryPresets(); ++i)
+                presets.loadFactoryPreset (i);
+
+            presets.loadFactoryPreset (0);
+            expectWithinAbsoluteError (value (ParamIDs::octave), 0.0f, 0.001f);
+            expectWithinAbsoluteError (value (ParamIDs::resolution), 1.0f, 0.001f);
+
+            // The name survives a state save / load.
+            presets.loadFactoryPreset (subFollow);
+            juce::MemoryBlock blob;
+            p.getStateInformation (blob);
+            TetherAudioProcessor q;
+            q.setStateInformation (blob.getData(), (int) blob.getSize());
+            expectEquals (q.getPresets().getCurrentName(), juce::String ("Sub Follow"));
+        }
+
+        beginTest ("User presets save, list, load and delete");
+        {
+            TetherAudioProcessor p;
+            auto& presets = p.getPresets();
+            const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("TetherPresetTest");
+            folder.deleteRecursively();
+            presets.setUserDirectory (folder);
+
+            setParam (p, ParamIDs::semitones, 7.0f);
+            setParam (p, ParamIDs::scale, (float) tether::Scale::major);
+            setParam (p, ParamIDs::vibrato, 40.0f);
+            expect (presets.saveUserPreset ("My Fifth / Test"), "save");
+            expect (! presets.isCurrentFactory());
+            expect (presets.getUserPresetNames().contains (presets.getCurrentName()), "listed");
+
+            presets.loadFactoryPreset (0);
+            auto value = [&] (const char* id) { return p.getState().getRawParameterValue (id)->load(); };
+            expectWithinAbsoluteError (value (ParamIDs::semitones), 0.0f, 0.001f);
+
+            expect (presets.loadUserPreset (presets.getUserPresetNames()[0]), "load");
+            expectWithinAbsoluteError (value (ParamIDs::semitones), 7.0f, 0.001f);
+            expectWithinAbsoluteError (value (ParamIDs::scale), (float) tether::Scale::major, 0.001f);
+            expectWithinAbsoluteError (value (ParamIDs::vibrato), 40.0f, 0.01f);
+
+            presets.loadNext (1);   // wraps from the only user preset to the first factory one
+            expectEquals (presets.getCurrentName(), juce::String ("Init"));
+            presets.loadNext (-1);
+            expect (! presets.isCurrentFactory());
+
+            expect (presets.deleteUserPreset (presets.getCurrentName()), "delete");
+            expect (presets.getUserPresetNames().isEmpty());
+            folder.deleteRecursively();
+        }
+
         beginTest ("State survives a save / load round trip");
         {
             TetherAudioProcessor a;
@@ -139,6 +223,9 @@ public:
             setParam (a, ParamIDs::motion, 80.0f);
             setParam (a, ParamIDs::detectLayer, 0.0f);
             setParam (a, ParamIDs::layerRoot, 43.0f);
+            setParam (a, ParamIDs::fine, -20.0f);
+            setParam (a, ParamIDs::scale, (float) tether::Scale::dorian);
+            setParam (a, ParamIDs::key, 9.0f);
 
             juce::MemoryBlock blob;
             a.getStateInformation (blob);
@@ -151,6 +238,9 @@ public:
             expectWithinAbsoluteError (value (ParamIDs::motion), 80.0f, 0.01f);
             expectWithinAbsoluteError (value (ParamIDs::detectLayer), 0.0f, 0.001f);
             expectWithinAbsoluteError (value (ParamIDs::layerRoot), 43.0f, 0.001f);
+            expectWithinAbsoluteError (value (ParamIDs::fine), -20.0f, 0.001f);
+            expectWithinAbsoluteError (value (ParamIDs::scale), (float) tether::Scale::dorian, 0.001f);
+            expectWithinAbsoluteError (value (ParamIDs::key), 9.0f, 0.001f);
         }
 
         beginTest ("Parameter text");
@@ -166,6 +256,11 @@ public:
             expectEquals (text (ParamIDs::gate, -80.0f), juce::String ("Off"));
             expectEquals (text (ParamIDs::semitones, 7.0f), juce::String ("+7 st"));
             expectEquals (text (ParamIDs::octave, -1.0f), juce::String ("-1 oct"));
+            expectEquals (text (ParamIDs::fine, 25.0f), juce::String ("+25 ct"));
+            expectEquals (text (ParamIDs::formantShift, -3.0f), juce::String ("-3.0 st"));
+            expectEquals (text (ParamIDs::vibrato, 150.0f), juce::String ("150%"));
+            expectEquals (text (ParamIDs::scale, (float) tether::Scale::minorPentatonic), juce::String ("Minor Pentatonic"));
+            expectEquals (text (ParamIDs::key, 6.0f), juce::String ("F#"));
         }
 
         beginTest ("Editor opens, animates and closes cleanly");
@@ -174,7 +269,7 @@ public:
             p.prepareToPlay (48000.0, 512);
             std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditorAndMakeActive());
             expect (editor != nullptr);
-            expectEquals (editor->getWidth(), 900);
+            expectEquals (editor->getWidth(), 1040);
 
             // Play a short melody so the visualizer has something to show.
             constexpr double sr = 48000.0;

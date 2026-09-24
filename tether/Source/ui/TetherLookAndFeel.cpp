@@ -45,6 +45,36 @@ TetherLookAndFeel::TetherLookAndFeel()
     setColour (juce::TooltipWindow::backgroundColourId, palette::panel.brighter (0.1f));
     setColour (juce::TooltipWindow::textColourId, palette::text);
     setColour (juce::TooltipWindow::outlineColourId, palette::panelEdge);
+    setColour (juce::AlertWindow::backgroundColourId, palette::panel);
+    setColour (juce::AlertWindow::textColourId, palette::text);
+    setColour (juce::AlertWindow::outlineColourId, palette::panelEdge);
+    setColour (juce::TextEditor::backgroundColourId, palette::background);
+    setColour (juce::TextEditor::textColourId, palette::text);
+    setColour (juce::TextEditor::outlineColourId, palette::panelEdge);
+    setColour (juce::TextEditor::focusedOutlineColourId, palette::textDim);
+    setColour (juce::TextEditor::highlightColourId, palette::track);
+    setColour (juce::TextButton::buttonColourId, palette::background);
+    setColour (juce::TextButton::textColourOffId, palette::text);
+    setColour (juce::TextButton::textColourOnId, palette::text);
+}
+
+void TetherLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button, const juce::Colour&,
+                                              bool highlighted, bool down)
+{
+    const auto bounds = button.getLocalBounds().toFloat().reduced (0.5f);
+    g.setColour (down ? palette::track : (highlighted ? palette::panel.brighter (0.08f) : palette::background));
+    g.fillRoundedRectangle (bounds, 6.0f);
+    g.setColour (highlighted ? palette::textDim : palette::panelEdge);
+    g.drawRoundedRectangle (bounds, 6.0f, 1.0f);
+}
+
+void TetherLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button, bool, bool)
+{
+    const bool isName = button.getProperties().getWithDefault ("presetName", false);
+    g.setColour (button.isEnabled() ? palette::text : palette::textDim);
+    g.setFont (isName ? uiFont (12.5f, true) : uiFont (11.0f, true).withExtraKerningFactor (0.08f));
+    g.drawText (button.getButtonText(), button.getLocalBounds().reduced (isName ? 10 : 4, 0),
+                isName ? juce::Justification::centredLeft : juce::Justification::centred, true);
 }
 
 juce::Typeface::Ptr TetherLookAndFeel::getTypefaceForFont (const juce::Font& font)

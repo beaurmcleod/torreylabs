@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Parameters.h"
+#include "PresetManager.h"
 #include "dsp/TetherEngine.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -43,6 +44,7 @@ public:
 
     juce::AudioProcessorValueTreeState& getState() noexcept     { return state; }
     tether::TetherEngine& getEngine() noexcept                  { return engine; }
+    PresetManager& getPresets() noexcept                        { return presets; }
 
     /** True while the host is feeding the Guide (sidechain) bus. */
     bool isGuideRouted() const noexcept                         { return guideRouted.load (std::memory_order_relaxed); }
@@ -59,6 +61,7 @@ private:
 
     juce::AudioProcessorValueTreeState state;
     ParameterReader params;
+    PresetManager presets { state };
     tether::TetherEngine engine;
     std::atomic<bool> guideRouted { false };
     std::atomic<double> preparedRate { 0.0 };

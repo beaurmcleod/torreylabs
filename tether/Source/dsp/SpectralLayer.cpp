@@ -13,8 +13,6 @@ void SpectralLayer::prepare (int maxFftSize)
     cepstrum.assign (2 * n, 0.0f);
     envelope.assign (bins, 1.0f);
     magnitude.assign (bins, 0.0f);
-    guidePower.assign (bins, 0.0f);
-    binGain.assign (bins, 1.0f);
     rotationPrev.assign (bins, 0.0f);
     rotationNext.assign (bins, 0.0f);
     peaks.assign (bins, 0);
@@ -42,7 +40,6 @@ void SpectralLayer::configure (double newSampleRate, int newFftSize, const juce:
     for (int n = 0; n < fftSize; ++n)
         window[(size_t) n] = 0.5f - 0.5f * std::cos (kTwoPi * (float) n / (float) fftSize);
 
-    buildBands();
     reset();
 }
 
@@ -58,48 +55,13 @@ void SpectralLayer::reset() noexcept
     std::fill (rotationPrev.begin(), rotationPrev.end(), 0.0f);
     std::fill (rotationNext.begin(), rotationNext.end(), 0.0f);
     std::fill (envelope.begin(), envelope.end(), 1.0f);
-    std::fill (binGain.begin(), binGain.end(), 1.0f);
-
-    for (int b = 0; b < maxBands; ++b)
-    {
-        guideShort[b] = guideLong[b] = layerShort[b] = layerLong[b] = 0.0f;
-        bandGainDb[b] = guideEnergy[b] = layerEnergy[b] = 0.0f;
-    }
-
-    guideFrames = layerFrames = 0;
-}
-
-void SpectralLayer::buildBands()
-{
-    // Roughly third-octave bands from 50 Hz up, each at least two bins wide.
-    int count = 1;
-    bandEdges[0] = 0;
-
-    const double highest = std::min (16000.0, 0.46 * sampleRate);
-
-    for (double f = 50.0; f < highest && count < maxBands; f *= 1.2599210498948732)
-    {
-        const int bin = (int) std::lround (f * fftSize / sampleRate);
-
-        if (bin >= bandEdges[count - 1] + 2)
-            bandEdges[count++] = bin;
-    }
-
-    if (count > 1 && numBins - bandEdges[count - 1] < 2)
-        --count;
-
-    bandEdges[count] = numBins;
-    numBands = count;
-
-    for (int b = 0; b < numBands; ++b)
-        bandCentres[b] = 0.5f * (float) (bandEdges[b] + bandEdges[b + 1] - 1);
 }
 
 //==============================================================================
-void SpectralLayer::processFrame (const float* const* layer, int numChannels, const float* guide,
-                                  const FrameParams& params, float* const* synthesis) noexcept
+void SpectralLayer::processFrame (const float* const* layer, int numChannels, const FrameParams& params,
+                                  float* const* synthesis) noexcept
 {
-    const int channels = juce::jlimit (1, maxChannels, numChannels);
+    const int channels = std::clamp (numChannels, 1, maxChannels);
     const int n = fftSize, lastBin = numBins - 1;
     float* work = fftWork.data();
 
@@ -124,7 +86,7 @@ void SpectralLayer::processFrame (const float* const* layer, int numChannels, co
         magnitude[(size_t) k] = std::sqrt (power);
     }
 
-    if (std::abs (params.ratio - 1.0f) > 1.0e-5f)
+    if (std::abs (params.ratio - 1.0f) > 1.0e-5f || std::abs (params.formantRatio - 1.0f) > 1.0e-5f)
     {
         shiftPitch (channels, params);
     }
@@ -138,8 +100,6 @@ void SpectralLayer::processFrame (const float* const* layer, int numChannels, co
 
     for (int c = 0; c < channels; ++c)
         std::swap (previous[c], spectrum[c]);
-
-    applyMotion (channels, guide, params);
 
     // Hann analysis x Hann synthesis windows sum to 1.5 at 75 % overlap.
     constexpr float olaScale = 1.0f / 1.5f;
@@ -204,7 +164,13 @@ void SpectralLayer::shiftPitch (int channels, const FrameParams& params) noexcep
         peaks[(size_t) numPeaks++] = loudest;
     }
 
-    if (params.preserveFormants)
+    // A partial moved from bin k to k * ratio keeps its amplitude when the
+    // envelope follows the pitch; otherwise it takes the envelope's value at
+    // its new place, read through the wanted formant ratio.
+    const float formant = std::clamp (params.formantRatio, 1.0f / 16.0f, 16.0f);
+    const bool useEnvelope = std::abs (formant - params.ratio) > 1.0e-4f;
+
+    if (useEnvelope)
         computeEnvelope (params.sourceHz);
 
     int regionStart = 0;
@@ -251,8 +217,11 @@ void SpectralLayer::shiftPitch (int channels, const FrameParams& params) noexcep
 
             auto factor = rotation;
 
-            if (params.preserveFormants)
-                factor *= juce::jlimit (1.0f / 16.0f, 16.0f, envelope[(size_t) dest] / envelope[(size_t) k]);
+            if (useEnvelope)
+            {
+                const int at = std::clamp ((int) std::lround ((float) dest / formant), 0, lastBin);
+                factor *= std::clamp (envelope[(size_t) at] / envelope[(size_t) k], 1.0f / 16.0f, 16.0f);
+            }
 
             for (int c = 0; c < channels; ++c)
                 shifted[c][(size_t) dest] += spectrum[c][(size_t) k] * factor;
@@ -271,7 +240,7 @@ void SpectralLayer::computeEnvelope (float sourceHz) noexcept
     const int n = fftSize, lastBin = numBins - 1;
     const float period = (float) sampleRate / (sourceHz > 20.0f ? sourceHz : 150.0f);
     const int upper = std::max (8, (int) (sampleRate / 350.0));
-    const int cutoff = std::min (juce::jlimit (8, upper, (int) (0.6f * period)), n / 2 - 1);
+    const int cutoff = std::min (std::clamp ((int) (0.6f * period), 8, upper), n / 2 - 1);
 
     float* c = cepstrum.data();
 
@@ -292,147 +261,6 @@ void SpectralLayer::computeEnvelope (float sourceHz) noexcept
 
     for (int k = 0; k <= lastBin; ++k)
         envelope[(size_t) k] = std::exp (c[2 * k]);
-}
-
-//==============================================================================
-void SpectralLayer::applyMotion (int channels, const float* guide, const FrameParams& params) noexcept
-{
-    const int n = fftSize, lastBin = numBins - 1;
-    const double frameRate = sampleRate / hopSize;
-
-    // Converts a one-sided sum of |X|^2 of a Hann-windowed frame into mean-square.
-    const float toMeanSquare = 1.0f / (0.1875f * (float) n * (float) n);
-    constexpr float silence = 1.0e-9f; // -90 dBFS
-
-    float totalGuide = 0.0f, totalLayer = 0.0f;
-
-    if (guide != nullptr && params.guidePresent)
-    {
-        float* work = fftWork.data();
-
-        for (int i = 0; i < n; ++i)
-            work[i] = guide[i] * window[(size_t) i];
-
-        std::fill (work + n, work + 2 * n, 0.0f);
-        fft->performRealOnlyForwardTransform (work, true);
-
-        for (int k = 0; k <= lastBin; ++k)
-            guidePower[(size_t) k] = work[2 * k] * work[2 * k] + work[2 * k + 1] * work[2 * k + 1];
-    }
-    else
-    {
-        std::fill (guidePower.begin(), guidePower.end(), 0.0f);
-    }
-
-    for (int b = 0; b < numBands; ++b)
-    {
-        float g = 0.0f, l = 0.0f;
-
-        for (int k = bandEdges[b]; k < bandEdges[b + 1]; ++k)
-        {
-            g += guidePower[(size_t) k];
-
-            for (int c = 0; c < channels; ++c)
-                l += std::norm (shifted[c][(size_t) k]);
-        }
-
-        guideEnergy[b] = g;
-        layerEnergy[b] = l;
-        totalGuide += g;
-        totalLayer += l;
-    }
-
-    const bool guideActive = totalGuide * toMeanSquare > silence;
-    const bool layerActive = totalLayer * toMeanSquare / (float) channels > silence;
-
-    if (guideActive) guideFrames = std::min (guideFrames + 1, 1 << 30);
-    if (layerActive) layerFrames = std::min (layerFrames + 1, 1 << 30);
-
-    const float shortCoeff = onePoleCoeff (0.02f, frameRate);
-    const float longCoeff  = onePoleCoeff (4.0f, frameRate);
-    const float gainCoeff  = onePoleCoeff (0.03f, frameRate);
-    const float relaxCoeff = onePoleCoeff (0.15f, frameRate);
-
-    // Plain running mean until the exponential average has warmed up.
-    const float guideLongCoeff = std::max (longCoeff, 1.0f / (float) std::max (1, guideFrames));
-    const float layerLongCoeff = std::max (longCoeff, 1.0f / (float) std::max (1, layerFrames));
-
-    // Band shapes are relative to the frame's total energy, floored at -50 dB
-    // so empty bands read as "quiet", not as minus infinity.
-    constexpr float shapeFloor = 1.0e-5f;
-    bool anyGain = false;
-
-    for (int b = 0; b < numBands; ++b)
-    {
-        if (guideActive)
-        {
-            const float shape = 10.0f * std::log10 (guideEnergy[b] / totalGuide + shapeFloor);
-            guideShort[b] = guideFrames == 1 ? shape : guideShort[b] + shortCoeff * (shape - guideShort[b]);
-            guideLong[b] += guideLongCoeff * (guideShort[b] - guideLong[b]);
-        }
-
-        if (layerActive)
-        {
-            const float shape = 10.0f * std::log10 (layerEnergy[b] / totalLayer + shapeFloor);
-            layerShort[b] = layerFrames == 1 ? shape : layerShort[b] + shortCoeff * (shape - layerShort[b]);
-            layerLong[b] += layerLongCoeff * (layerShort[b] - layerLong[b]);
-        }
-
-        if (guideActive && layerActive)
-        {
-            // Replace the layer's own spectral movement with the guide's...
-            const float movement = (guideShort[b] - guideLong[b]) - (layerShort[b] - layerLong[b]);
-            // ...and optionally pull its average tone towards the guide's.
-            const float toneOffset = guideLong[b] - layerLong[b];
-
-            const float target = juce::jlimit (-24.0f, 18.0f, params.motion * movement + params.tone * toneOffset);
-            bandGainDb[b] += gainCoeff * (target - bandGainDb[b]);
-        }
-        else
-        {
-            bandGainDb[b] -= relaxCoeff * bandGainDb[b];
-        }
-
-        anyGain = anyGain || std::abs (bandGainDb[b]) > 0.01f;
-    }
-
-    if (! anyGain || numBands == 0)
-        return;
-
-    // Keep the overall layer energy unchanged: loudness is the level stage's job.
-    double weighted = 0.0, plain = 0.0;
-    for (int b = 0; b < numBands; ++b)
-    {
-        weighted += (double) layerEnergy[b] * std::pow (10.0, bandGainDb[b] / 10.0);
-        plain += layerEnergy[b];
-    }
-
-    const float normDb = (plain > 0.0 && weighted > 0.0) ? (float) (10.0 * std::log10 (weighted / plain)) : 0.0f;
-
-    int band = 0;
-    for (int k = 0; k <= lastBin; ++k)
-    {
-        while (band + 1 < numBands && (float) k >= bandCentres[band + 1])
-            ++band;
-
-        float db;
-
-        if ((float) k <= bandCentres[0])
-            db = bandGainDb[0];
-        else if (band + 1 >= numBands)
-            db = bandGainDb[numBands - 1];
-        else
-        {
-            const float t = ((float) k - bandCentres[band]) / (bandCentres[band + 1] - bandCentres[band]);
-            db = bandGainDb[band] + t * (bandGainDb[band + 1] - bandGainDb[band]);
-        }
-
-        binGain[(size_t) k] = dbToGain (db - normDb);
-    }
-
-    for (int c = 0; c < channels; ++c)
-        for (int k = 0; k <= lastBin; ++k)
-            shifted[c][(size_t) k] *= binGain[(size_t) k];
 }
 
 } // namespace tether

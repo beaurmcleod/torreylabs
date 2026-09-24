@@ -26,3 +26,7 @@ Using it
 1. Put Tether on the track you want to shape (the LAYER).
 2. Route the sound it should follow (the GUIDE) into Tether's sidechain input.
 3. Play. The header says GUIDE LOCKED once it hears the guide.
+4. Pick a preset from the PRESET bar to start from (Vocal Double, Sub Follow,
+   Choir Fifth, ...). LISTEN plays the guide so you can check the routing.
+
+Your own presets are saved to Documents/Low End Candy/Tether/Presets.
