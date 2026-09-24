@@ -1,0 +1,136 @@
+name: Tether plugin
+
+on:
+  push:
+    branches: [main]
+    paths: ["tether/**", ".github/workflows/tether.yml"]
+  pull_request:
+    paths: ["tether/**", ".github/workflows/tether.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: tether-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS (Universal VST3 + AU)
+            os: macos-14
+            artifact: Tether-macOS
+            configure: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+          - name: Windows (VST3)
+            os: windows-2022
+            artifact: Tether-Windows
+            configure: ""
+          - name: Linux (VST3)
+            os: ubuntu-24.04
+            artifact: Tether-Linux
+            configure: -G Ninja
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build xvfb libasound2-dev libx11-dev libxrandr-dev \
+            libxinerama-dev libxcursor-dev libxext-dev libfreetype-dev libfontconfig1-dev libgl1-mesa-dev
+
+      - name: Configure
+        run: cmake -S tether -B build -DCMAKE_BUILD_TYPE=Release ${{ matrix.configure }}
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Unit tests
+        run: |
+          if [ "$RUNNER_OS" == "Linux" ]; then
+            TETHER_SNAPSHOT="$PWD/tether-ui.png" xvfb-run -a build/TetherTests_artefacts/Release/TetherTests
+          elif [ "$RUNNER_OS" == "Windows" ]; then
+            build/TetherTests_artefacts/Release/TetherTests.exe
+          else
+            build/TetherTests_artefacts/Release/TetherTests
+          fi
+
+      - name: Collect plugins
+        run: |
+          mkdir -p dist
+          cp -R build/Tether_artefacts/Release/VST3/Tether.vst3 dist/
+          if [ "$RUNNER_OS" == "macOS" ]; then
+            cp -R build/Tether_artefacts/Release/AU/Tether.component dist/
+            # Ad-hoc signature so the bundles load on Apple Silicon.
+            codesign --force --deep --sign - dist/Tether.vst3
+            codesign --force --deep --sign - dist/Tether.component
+            cp tether/packaging/install-mac.command dist/
+          fi
+          cp tether/packaging/INSTALL.txt dist/
+
+      - name: Download pluginval
+        run: |
+          case "$RUNNER_OS" in
+            macOS)   zip=pluginval_macOS.zip ;;
+            Windows) zip=pluginval_Windows.zip ;;
+            *)       zip=pluginval_Linux.zip ;;
+          esac
+          curl -sSL -o pluginval.zip "https://github.com/Tracktion/pluginval/releases/latest/download/$zip"
+          unzip -q pluginval.zip -d pluginval
+
+      - name: Validate VST3 with pluginval
+        run: |
+          case "$RUNNER_OS" in
+            macOS)   pv=pluginval/pluginval.app/Contents/MacOS/pluginval ;;
+            Windows) pv=pluginval/pluginval.exe ;;
+            *)       pv="xvfb-run -a pluginval/pluginval" ;;
+          esac
+          $pv --strictness-level 10 --validate-in-process --output-dir pluginval-logs --validate dist/Tether.vst3
+
+      - name: Validate Audio Unit with auval
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R dist/Tether.component ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          sleep 2
+          auval -a | grep -i tether
+          auval -strict -v aufx Tthr Lecd
+
+      - name: Render demo audio
+        if: runner.os == 'Linux'
+        run: |
+          build/TetherRender_artefacts/Release/tether_render --demo demo-audio
+
+      - name: Upload plugins
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/
+          if-no-files-found: error
+
+      - name: Upload UI snapshot and demo audio
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tether-UI-and-demo-audio
+          path: |
+            tether-ui.png
+            demo-audio/
+
+      - name: Upload pluginval logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pluginval-logs-${{ matrix.artifact }}
+          path: pluginval-logs/
+          if-no-files-found: ignore

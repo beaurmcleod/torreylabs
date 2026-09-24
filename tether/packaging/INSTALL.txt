@@ -1,0 +1,28 @@
+TETHER - install
+================
+
+macOS
+-----
+Option A: right-click "install-mac.command" > Open (double-clicking a downloaded
+script is blocked by macOS; right-click > Open lets it run once).
+
+Option B (Terminal):
+  cp -R Tether.vst3 ~/Library/Audio/Plug-Ins/VST3/
+  cp -R Tether.component ~/Library/Audio/Plug-Ins/Components/
+  xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/Tether.vst3 ~/Library/Audio/Plug-Ins/Components/Tether.component
+
+This build is not notarized yet, so the quarantine step is what lets your DAW
+load it.
+
+Windows
+-------
+Copy the Tether.vst3 folder into:
+  C:\Program Files\Common Files\VST3\
+
+Then rescan plug-ins in your DAW.
+
+Using it
+--------
+1. Put Tether on the track you want to shape (the LAYER).
+2. Route the sound it should follow (the GUIDE) into Tether's sidechain input.
+3. Play. The header says GUIDE LOCKED once it hears the guide.
