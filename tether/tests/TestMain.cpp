@@ -3,12 +3,25 @@
 
 #include <iostream>
 
+namespace
+{
+    // JUCE's default runner logs through Logger, which on Windows goes to the
+    // debugger instead of the console; print to stdout so CI logs show results.
+    class ConsoleRunner final : public juce::UnitTestRunner
+    {
+        void logMessage (const juce::String& message) override
+        {
+            std::cout << message << std::endl;
+        }
+    };
+}
+
 int main (int argc, char** argv)
 {
     // Processor and editor tests need JUCE's message manager.
     juce::ScopedJuceInitialiser_GUI juceInit;
 
-    juce::UnitTestRunner runner;
+    ConsoleRunner runner;
     runner.setAssertOnFailure (false);
     runner.setPassesAreLogged (false);
 

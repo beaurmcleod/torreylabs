@@ -458,7 +458,7 @@ private:
     void testControls()
     {
         constexpr double sr = 48000.0;
-        const int n = (int) (1.5 * sr);
+        const int n = (int) (2.0 * sr);
         const auto layer = testsig::saw (sr, 110.0, 0.25f, n);
 
         beginTest ("Level 0 keeps the layer's own loudness");
@@ -523,6 +523,9 @@ private:
 
             auto brightness = [&] (const std::vector<float>& x, int start, int len)
             {
+                expect (start > 0 && start + len <= (int) x.size(), "measurement window must lie inside the signal");
+                len = juce::jmin (len, (int) x.size() - start);
+
                 // Energy above 1 kHz relative to total, via first difference as a crude high-pass.
                 double hi = 0.0, all = 0.0;
                 for (int i = start + 1; i < start + len; ++i)

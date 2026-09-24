@@ -77,6 +77,10 @@ inline std::vector<float> noise (int numSamples, float amp, int seed)
 
 inline double rms (const std::vector<float>& x, int start, int length)
 {
+    jassert (start >= 0 && start + length <= (int) x.size());
+    start = std::max (0, start);
+    length = std::max (0, std::min (length, (int) x.size() - start));
+
     double sum = 0.0;
     for (int i = start; i < start + length; ++i)
         sum += (double) x[(size_t) i] * x[(size_t) i];
@@ -93,9 +97,13 @@ inline double rmsDb (const std::vector<float>& x, int start, int length)
 inline double referencePitch (const std::vector<float>& x, int start, int length, double sampleRate,
                               double minHz = 20.0, double maxHz = 2000.0)
 {
+    jassert (start >= 0 && start + length <= (int) x.size());
+    length = std::min (length, (int) x.size() - start);
+
+    // Lags up to maxLag + 1 are read (for interpolation), so leave room for them.
     const int maxLag = (int) (sampleRate / minHz), minLag = (int) (sampleRate / maxHz);
-    const int n = length - maxLag;
-    if (n <= 0)
+    const int n = length - maxLag - 1;
+    if (n <= 0 || start < 0)
         return 0.0;
 
     std::vector<double> nac ((size_t) maxLag + 2, 0.0);
