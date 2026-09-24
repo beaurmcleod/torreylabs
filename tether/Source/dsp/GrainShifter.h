@@ -33,6 +33,7 @@ public:
         float outputPeriod = 100.0f;    // wanted output period in samples
         float formantRatio = 1.0f;      // 1 keeps the formants; the pitch ratio moves them with the pitch
         bool lockToInput = false;       // no shift wanted: follow the input marks exactly (transparent)
+        float grainPeriods = 1.0f;      // grain half-length in periods (1 = classic two-period grains)
     };
 
     /** The smallest delay that lets marks and grains be complete in time. */

@@ -550,6 +550,7 @@ void TetherEngine::processFrame (const EngineParams& p, bool guideConnected) noe
         controls.outputPeriod = controls.analysisPeriod / ratio;
         controls.formantRatio = identity ? 1.0f : formantRatio;
         controls.lockToInput = identity;
+        controls.grainPeriods = p.grainPeriods;
 
         float* outPtrs[maxChannels] = { outReady[0].data(), outReady[1].data() };
         grains.render (controls, outPtrs, numCh);

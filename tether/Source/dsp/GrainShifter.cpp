@@ -305,7 +305,8 @@ void GrainShifter::render (const Controls& controls, float* const* output, int n
 
         const Mark& mark = marks[(size_t) (grainMarkIndex & markMask)];
         const double spacing = mark.spacing > 0.0 ? mark.spacing : period;
-        const double halfOut = std::min (spacing / rate, 1.5 * spacing);
+        const double halfIn = spacing * (controls.lockToInput ? 1.0 : std::clamp ((double) controls.grainPeriods, 0.25, 1.0));
+        const double halfOut = std::min (halfIn / rate, 1.5 * spacing);
 
         if (nextCentre - halfOut > (double) blockEnd)
             break;

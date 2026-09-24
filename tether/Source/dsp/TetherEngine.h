@@ -52,6 +52,7 @@ struct EngineParams
     float layerRoot   = 48.0f;  // MIDI note of the layer when not detected (C3)
     bool  formant     = true;   // keep the layer's formants when shifting
     float formantShift = 0.0f;  // extra formant shift in semitones, -12..12
+    float grainPeriods = 1.0f;  // (internal) grain half-length in periods for the Natural engine
     float vibrato     = 1.0f;   // 0..2, how much of the guide's vibrato / bends is passed on
     Scale scale       = Scale::off;
     int   key         = 0;      // 0 = C .. 11 = B

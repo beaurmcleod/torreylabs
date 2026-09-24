@@ -467,6 +467,7 @@ int main (int argc, char** argv)
         else if (a == "--no-detect")  p.layerAuto = false;
         else if (a == "--no-formant") p.formant = false;
         else if (a == "--formant-shift") p.formantShift = parseFloat (args, i);
+        else if (a == "--grain-periods") p.grainPeriods = parseFloat (args, i);
         else if (a == "--listen")     p.listen = true;
         else if (a == "--scale")
         {
